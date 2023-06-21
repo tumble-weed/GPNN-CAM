@@ -1,0 +1,45 @@
+%load_ext autoreload
+%autoreload 2
+import os
+import itertools
+from benchmark import settings
+import collect_lzma
+
+
+methodnames = ['sam']
+SKIP = 'true'
+if MODE == 0:
+    datasets = [
+        'imagenet',
+        # 'pascal'
+        ]
+elif MODE == 1:
+    datasets = [
+        # 'imagenet',
+        'pascal'
+        ]    
+modelnames = [
+    'dummymodel']
+modelnames_str = ''
+for modelname in modelnames:
+    modelnames_str = modelnames_str + modelname + ' '
+gen = itertools.product(methodnames,datasets)
+for methodname,dataset in gen:
+    cmd = f'DBG_CORRECT_PASCAL_NORMALIZATION=1 ADD_SCALE_NOISE=0 DBG_NO_INCORRECT=1 CUDA_VISIBLE_DEVICES=0 python -m benchmark.pascal_run_competing_saliency_librecam2  --methodnames {methodname} --modelnames {modelnames_str} --skip {SKIP} --skip_incorrect False --dataset {dataset} --run_metric none --purge_metric false'
+    os.system(cmd)
+    os.system(f'find {settings.RESULTS_DIR_librecam}/{dataset}-{methodname}-{modelname} -type f -name "*.xz" | grep -i "\.xz$" | wc -l')
+    # import ipdb;ipdb.set_trace()
+    for modelname in modelnames:
+        collect_lzma.main(
+            
+                SAVE_OR_LOAD = 'save',
+                METRICS_OR_SALIENCY = 'saliency',
+                SAVE_ALL_OR_APPEND = 'all',
+                REMOVE_ORIGINAL_DIR = True,
+                methodname= methodname,
+                metricname = None,
+                modelname = modelname,
+                dataset = dataset,
+        )
+    
+

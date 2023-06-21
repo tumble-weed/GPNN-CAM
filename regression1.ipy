@@ -1,0 +1,294 @@
+%load_ext autoreload
+%autoreload 2
+#================================================
+import torch
+import dutils
+# import tmp
+from regression import *
+from gradcam import normalize_tensor
+tensor_to_numpy = lambda t:t.detach().cpu().numpy()
+
+class Hook():
+    def __init__(self,cnn,CAT_FEATS = False):
+        self.CAT_FEATS = CAT_FEATS
+        self.cnn = cnn
+        
+        if 'handle33' in cnn.features[33].__dict__:
+            cnn.features[33].handle33.remove()
+        if 'o33' in cnn.features[33].__dict__:
+            del cnn.features[33].o33
+        if self.CAT_FEATS:
+            def hook33(self,i,o):
+                self.o33 = torch.tensor(tensor_to_numpy(o),device=o.device)                                                
+            cnn.features[33].handle33 =cnn.features[33].register_forward_hook(hook33)    
+        if 'handle43' in cnn.features[43].__dict__:
+            cnn.features[43].handle43.remove()
+            del cnn.features[43].o43
+        def hook43(self,i,o):
+            self.o43 = torch.tensor(tensor_to_numpy(o),device=o.device)    
+        cnn.features[43].handle43 =cnn.features[43].register_forward_hook(hook43)    
+    def __call__(self,normalized_augmentations):
+        with torch.inference_mode():
+            output = self.cnn(normalized_augmentations)
+        
+        o43 = self.cnn.features[43].o43
+        if self.CAT_FEATS:
+            o33 = self.cnn.features[33].o33                
+            return output,o33,o43
+        return output,o43
+class HookPascal():
+    def __init__(self,cnn,CAT_FEATS = False):
+        self.CAT_FEATS = CAT_FEATS
+        self.cnn = cnn
+        
+        if 'handle30' in cnn.features[30].__dict__:
+            cnn.features[30].handle30.remove()
+        if 'o30' in cnn.features[30].__dict__:
+            del cnn.features[30].o30
+        # if self.CAT_FEATS:
+        #     def hook33(self,i,o):
+        #         self.o33 = torch.tensor(tensor_to_numpy(o),device=o.device)                                                
+        #     cnn.features[33].handle33 =cnn.features[33].register_forward_hook(hook33)    
+        # if 'handle30' in cnn.features[30].__dict__:
+        #     cnn.features[30].handle30.remove()
+        #     del cnn.features[30].o30
+        """
+        def hook30(self,i,o):
+            self.o30 = torch.tensor(tensor_to_numpy(o),device=o.device)    
+        cnn.features[30].handle30 =cnn.features[30].register_forward_hook(hook30)    
+        """
+        try:
+            hook30 = get_hook('o30')
+        except NameError:
+            from regression import get_hook
+            hook30 = get_hook('o30')
+        cnn.features[30].handle30 =cnn.features[30].register_forward_hook(hook30)    
+    def __call__(self,normalized_augmentations):
+        with torch.inference_mode():
+            output = self.cnn(normalized_augmentations)
+        
+        o43 = self.cnn.features[30].o30
+        if self.CAT_FEATS:
+            assert False
+            o33 = self.cnn.features[33].o33                
+            return output,o33,o43
+        return output,o43
+#================================================
+# def get_cam(cnn,augmentations,normalized_augmentations,target_id,CAT_FEATS = True):
+if os.environ.get('DBG_DOG_PERSON',False)=='1':
+    target_id = 14
+CAT_FEATS = False
+# def preprocess_cnn_feats_for_regression(feats):
+#     feats = feats.detach()
+#     feats_bchw = feats
+#     feats = feats.view(*feats_bchw.shape[:2],-1)            
+#     pass
+if True:
+    #=========================================================
+    if dataset == 'imagenet':
+        normalized_ref = normalize_tensor(ref)
+    elif dataset == 'pascal':
+        if os.environ.get('DBG_CORRECT_PASCAL_NORMALIZATION',False) == '1':
+            # import ipdb; ipdb.set_trace()
+            normalized_ref = normalize_pascal(ref)
+        else:
+            normalized_ref = normalize_tensor(ref)                                
+    #=========================================================
+    device = normalized_augmentations.device
+    hooked_cnn = HookPascal(cnn,CAT_FEATS = CAT_FEATS)
+    PERMUTATION = True
+    if not PERMUTATION:
+        if CAT_FEATS:
+            if dataset == 'imagenet':
+                aug_output,o33,o43 = hooked_cnn(normalized_augmentations)
+                o43up = torch.nn.functional.interpolate(o43,size=o33.shape[-2:],mode='bilinear',align_corners=False)
+                ocat = torch.cat([o33,o43up],dim=1)
+                feats = ocat.detach()
+                feats_bchw = feats
+                feats = feats.view(*feats_bchw.shape[:2],-1)        
+            else:
+                assert False
+            
+        else:
+            if dataset == 'pascal':
+                aug_output,o43 = hooked_cnn(normalized_augmentations)
+                if aug_output.ndim == 4:
+                    aug_output = aug_output.mean(dim=(2,3))
+                feats_bchw = o43
+                feats = torch.tensor(feats_bchw,device=device).view(feats_bchw.shape[0],feats_bchw.shape[1],-1).detach()
+            else:
+                aug_output,o30 = hooked_cnn(normalized_augmentations)
+                if aug_output.ndim == 4:
+                    aug_output = aug_output.mean(dim=(2,3))            
+                feats_bchw = o30
+                feats = torch.tensor(feats_bchw,device=device).view(feats_bchw.shape[0],feats_bchw.shape[1],-1).detach()            
+            
+        DISABLE = 0
+        feats_mean = feats_bchw.mean(dim=(0,-1,-2))
+        feats_std = feats_bchw.std(dim=(0,-1,-2))
+        feats_std = feats_std  + (feats_std==0).float()
+        print( feats_mean.shape,feats_std.shape)
+        aug_prob_full = torch.softmax(aug_output,dim=-1)
+        aug_score = aug_output[:, target_id]
+        aug_prob = aug_prob_full[:, target_id]
+        # Define the input tensor X of shape (50, 512, 49) and the target tensor Y of shape (50,)
+        # X = torch.randn(50, 512, 49)
+        # Y = torch.randn(50)
+        X = (feats-feats_mean[None,:,None])/feats_std[None,:,None]
+        
+        def entropy_loss(prob):
+            return -torch.sum(prob*torch.log(prob+1e-8),dim=-1)
+        Y = aug_score
+        # Y = torch.log(aug_prob) - 10*entropy_loss(aug_prob_full)
+        w,b = solve_regression(X,Y,lambda_ = 0)
+
+        myCAM_aug = torch.einsum('ijk,j->ik',X,w).detach().cpu().numpy()
+        myCAM_aug = myCAM_aug.reshape(myCAM_aug.shape[0],feats_bchw.shape[2],feats_bchw.shape[3])
+        myCAM_aug = myCAM_aug.clip(0)
+        myCAM_aug = torch.nn.functional.interpolate(torch.tensor(myCAM_aug[:,None]),size=(224,224),mode='bilinear',align_corners=False).numpy()
+    elif PERMUTATION:
+        if CAT_FEATS:
+            if dataset == 'imagenet':
+                assert False        
+        else:
+            if dataset == 'imagenet':
+                aug_output,o43 = hooked_cnn(normalized_ref)
+                if aug_output.ndim == 4:
+                    aug_output = aug_output.mean(dim=(2,3))            
+                feats_bchw = o43
+                feats = torch.tensor(feats_bchw,device=device).view(feats_bchw.shape[0],feats_bchw.shape[1],-1).detach()            
+            elif dataset == 'pascal':
+                aug_output,o30 = hooked_cnn(normalized_ref)
+                if aug_output.ndim == 4:
+                    aug_output = aug_output.mean(dim=(2,3))            
+                feats_bchw = o30
+                feats = torch.tensor(feats_bchw,device=device).view(feats_bchw.shape[0],feats_bchw.shape[1],-1).detach()            
+        #create permutations of the last dimension
+        n_gen = 50
+        orders =  []
+        for i16 in range(n_gen):
+            if False and 'permutation':
+                o = np.random.permutation(feats.shape[-1])
+            elif True and 'random selection':
+                o = np.random.choice(feats.shape[-1],feats.shape[-1],replace=True)
+            else:
+                assert False
+            orders.append(o)
+        orders = np.stack(orders)
+        
+        # feats = feats.cpu()
+        
+        new_feats = []
+        for oi in range(orders.shape[0]):
+            # feats = feats[orders[:,None,:]]
+            new_feats.append(feats[:,:,orders[oi]])
+        new_feats = torch.cat(new_feats,dim=0)
+        feats = new_feats
+        DISABLE = 0
+        feats_mean = feats_bchw.mean(dim=(0,-1,-2))
+        feats_std = feats_bchw.std(dim=(0,-1,-2))
+        feats_std = feats_std  + (feats_std==0).float()
+        print( feats_mean.shape,feats_std.shape)
+        aug_prob_full = torch.softmax(aug_output,dim=-1)
+        aug_score = aug_output[:, target_id]
+        aug_prob = aug_prob_full[:, target_id]
+        # Define the input tensor X of shape (50, 512, 49) and the target tensor Y of shape (50,)
+        # X = torch.randn(50, 512, 49)
+        # Y = torch.randn(50)
+        X = (feats-feats_mean[None,:,None])/feats_std[None,:,None]
+        
+        def entropy_loss(prob):
+            return -torch.sum(prob*torch.log(prob+1e-8),dim=-1)
+        Y = aug_score
+        # Y = torch.log(aug_prob) - 10*entropy_loss(aug_prob_full)
+        w,b = solve_regression(X,Y,lambda_ = 0)
+
+        myCAM_aug = torch.einsum('ijk,j->ik',X,w).detach().cpu().numpy()
+        myCAM_aug = myCAM_aug.reshape(myCAM_aug.shape[0],feats_bchw.shape[2],feats_bchw.shape[3])
+        myCAM_aug = myCAM_aug.clip(0)
+        myCAM_aug = torch.nn.functional.interpolate(torch.tensor(myCAM_aug[:,None]),size=(224,224),mode='bilinear',align_corners=False).numpy()
+        
+    ##% level 2
+    # feats2 = torch.einsum('ijk,j->ijk',feats,w).detach().cpu().numpy()
+    if False and "LEVEL2":
+        masked = torch.tensor(myCAM_aug,device=device) * normalized_augmentations
+        # output2 = cnn(masked)
+        if CAT_FEATS:
+            output2,o33,o43 = hooked_cnn(masked)
+        else:
+            output2,o43 = hooked_cnn(masked)
+        if output2.ndim == 4:
+            output2 = output2.mean(dim=(2,3))
+        probs2 = torch.softmax(output2,dim=-1)
+        score2 = torch.log(probs2[:,target_id])
+        
+        w2,b2 = solve_regression(feats,score2,lambda_ = 0.01)
+        myCAM_aug2 = torch.einsum('ijk,j->ik',feats,w2).detach().cpu().numpy()
+        myCAM_aug2 = myCAM_aug2.reshape(myCAM_aug2.shape[0],feats_bchw.shape[2],feats_bchw.shape[3])
+        myCAM_aug2 = myCAM_aug2.clip(0)
+        myCAM_aug2 = torch.nn.functional.interpolate(torch.tensor(myCAM_aug2[:,None]),size=(224,224),mode='bilinear',align_corners=False).numpy()
+        
+
+    """
+    indicators = torch.ones(myCAM_aug.shape[0],1,224,224,device=device).requires_grad_(True)
+    indicators_cam = torch.nn.functional.interpolate(indicators,size=(myCAM_aug.shape[1],myCAM_aug.shape[2]),mode='bilinear',align_corners=False,antialias=True)
+    for_backward = (indicators_cam* myCAM_aug[:,None].detach())
+    for_backward.sum().backward()
+    dutils.img_save(indicators.grad[0,0]/indicators.grad[0,0].max(),'indicators.png',cmap='jet')
+    """
+    def viz_ix(myCAM,augmentations,vix=None,suffix=''):
+        if vix is not None and suffix is None:
+            suffix = vix
+        elif vix is None:
+            vix = 0
+        dutils.img_save(myCAM[vix]/myCAM[vix].max(),f'mycam{suffix}.png',cmap='jet')
+        dutils.img_save(augmentations[vix],f'aug{suffix}.png')
+    viz_ix(myCAM_aug,augmentations,2,suffix='')    
+    # assert False
+    # viz_ix(2,myCAM_aug2,augmentations)    
+
+    # ref_output = 
+    # assert False    
+
+    # ref_output= cnn(ref)
+    # if ref_output.ndim == 4:
+    #     ref_output = aug_output.mean(dim=(2,3))    
+    # ref_output = ref_output[:,target_id]
+    # ref_activation = gCAM_CLASS.activations['value']
+    # output,o33,o43 = hooked_cnn(normalized_augmentations)
+    
+if CAT_FEATS:
+    if dataset == 'imagenet':
+        output,o33,o43 = hooked_cnn(normalized_ref)
+        o43up = torch.nn.functional.interpolate(o43,size=o33.shape[-2:],mode='bilinear',align_corners=False)
+        ocat = torch.cat([o33,o43up],dim=1)
+        feats = ocat.detach()
+        feats_bchw = feats
+        feats = feats.view(*feats_bchw.shape[:2],-1)        
+    else: 
+        assert False, 'cat not implemented for pascal'
+else:
+    if dataset == 'imagenet':
+        output,o43 = hooked_cnn(normalized_ref)
+        feats_bchw = o43
+        feats = torch.tensor(feats_bchw,device=device).view(feats_bchw.shape[0],feats_bchw.shape[1],-1).detach()    
+    elif dataset == 'pascal':
+        aug_output,o30 = hooked_cnn(normalized_ref)
+        if aug_output.ndim == 4:
+            aug_output = aug_output.mean(dim=(2,3))
+        feats_bchw = o30
+        feats = torch.tensor(feats_bchw,device=device).view(feats_bchw.shape[0],feats_bchw.shape[1],-1).detach()        
+    ref_activation = feats
+    
+    myCAM = torch.einsum('ijk,j->ik',(ref_activation-feats_mean[None,:,None])/feats_std[None,:,None],w).detach().cpu().numpy()
+    myCAM = myCAM.reshape(myCAM.shape[0],feats_bchw.shape[2],feats_bchw.shape[3])
+    myCAM = myCAM.clip(0)
+    
+    # if myCAM.max() > 1:
+    #     myCAM = myCAM/myCAM.max()
+    myCAM = torch.nn.functional.interpolate(torch.tensor(myCAM[:,None]),size=(224,224),mode='bilinear',align_corners=False).numpy()
+    viz_ix(myCAM/myCAM.max(),ref,None,suffix='_ref')    
+    # dutils.img_save(myCAM[0]/myCAM[0].max(),'mycam_ref.png',cmap='jet')
+    # dutils.img_save(ref[0],'ref.png') 
+            
+# get_cam(cnn,augmentations,normalized_augmentations,target_id,CAT_FEATS = True)

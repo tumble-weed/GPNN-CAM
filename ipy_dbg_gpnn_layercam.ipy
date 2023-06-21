@@ -1,0 +1,9 @@
+%load_ext autoreload
+%autoreload 2
+vix = 1
+for ci,cam in enumerate(all_cams):
+    cam = cam[:,None,:,:]
+    dutils.img_save(cam[vix],f'cam_{ci}.png')
+dutils.img_save(cam_224[vix],f'cam224.png')
+dutils.img_save(normalized_augmentations[vix],f'aug.png')
+    

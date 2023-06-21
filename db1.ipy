@@ -1,0 +1,249 @@
+%load_ext autoreload
+%autoreload 2
+if True:
+    #================================================
+    import torch
+    class Hook():
+        def __init__(self,cnn,CAT_FEATS = False):
+            self.CAT_FEATS = CAT_FEATS
+            self.cnn = cnn
+            if 'handle33' in cnn.features[33].__dict__:
+                cnn.features[33].handle33.remove()
+            if 'o33' in cnn.features[33].__dict__:
+                del cnn.features[33].o33
+            if self.CAT_FEATS:
+                def hook33(self,i,o):
+                    self.o33 = torch.tensor(tensor_to_numpy(o),device=o.device)                                                
+                cnn.features[33].handle33 =cnn.features[33].register_forward_hook(hook33)    
+            if 'handle43' in cnn.features[43].__dict__:
+                cnn.features[43].handle43.remove()
+                del cnn.features[43].o43
+            def hook43(self,i,o):
+                self.o43 = torch.tensor(tensor_to_numpy(o),device=o.device)    
+            cnn.features[43].handle43 =cnn.features[43].register_forward_hook(hook43)    
+        def __call__(self,normalized_augmentations):
+            with torch.inference_mode():
+                output = self.cnn(normalized_augmentations)
+            
+            o43 = self.cnn.features[43].o43
+            if self.CAT_FEATS:
+                o33 = self.cnn.features[33].o33                
+                return output,o33,o43
+            return output,o43
+        
+    def solve_regression(X,Y,lambda_ = 0.01):
+        # Y = torch.log(prob)
+        # Define the L1 regularization coefficient lambda
+        # lambda_ = 0.01
+        # lambda_ = 0.01
+        # Flatten the Y tensor to shape (50, 1)
+        Y = Y.reshape(-1, 1)
+
+        # Compute the closed-form solution for w with L1 regularization
+        X_2_sum = torch.sum(X ** 2, dim=(0, 2))
+        X_Y_sum = torch.sum(X * Y[:, None, :], dim=(0, 2))
+        X_sum = torch.sum(X, dim=(0, 2))
+        Y_sum = torch.sum(Y, dim=0)
+        n_samples = X.shape[0]
+        w = torch.zeros_like(X[0, :, 0])
+        for i in range(w.shape[0]):
+            denominator = X_2_sum[i]
+            numerator = X_Y_sum[i] - ((1 / n_samples) * X_sum[i] * Y_sum)
+            if numerator > lambda_:
+                w[i] = (numerator - lambda_) / denominator
+            elif numerator < -lambda_:
+                w[i] = (numerator + lambda_) / denominator
+            else:
+                w[i] = 0
+
+        # Compute the bias b
+        b = torch.mean(Y - torch.einsum('ijk,j->i', X, w))
+
+        # Print the weight vector w and the bias b
+        print(w)
+        print(b)
+        return w,b        
+    #================================================
+    CAT_FEATS = True
+    hooked_cnn = Hook(cnn,CAT_FEATS = CAT_FEATS)
+    if CAT_FEATS:
+        output,o33,o43 = hooked_cnn(normalized_augmentations)
+        o43up = torch.nn.functional.interpolate(o43,size=o33.shape[-2:],mode='bilinear',align_corners=False)
+        ocat = torch.cat([o33,o43up],dim=1)
+        feats = ocat.detach()
+        feats_bchw = feats
+        feats = feats.view(*feats_bchw.shape[:2],-1)        
+    else:
+        output,o43 = hooked_cnn(normalized_augmentations)
+        feats_bchw = o43
+        feats = torch.tensor(feats_bchw,device=device).view(feats_bchw.shape[0],feats_bchw.shape[1],-1).detach()
+
+    prob = torch.softmax(output,dim=-1)
+    score = output[:, target_id]
+    prob = prob[:, target_id]
+    # Define the input tensor X of shape (50, 512, 49) and the target tensor Y of shape (50,)
+    # X = torch.randn(50, 512, 49)
+    # Y = torch.randn(50)
+
+    w,b = solve_regression(feats,score,lambda_ = 1)
+    
+    myCAM_aug = torch.einsum('ijk,j->ik',feats,w).detach().cpu().numpy()
+    myCAM_aug = myCAM_aug.reshape(myCAM_aug.shape[0],feats_bchw.shape[2],feats_bchw.shape[3])
+    myCAM_aug = myCAM_aug.clip(0)
+    myCAM_aug = torch.nn.functional.interpolate(torch.tensor(myCAM_aug[:,None]),size=(224,224),mode='bilinear',align_corners=False).numpy()
+    ##% level 2
+    # feats2 = torch.einsum('ijk,j->ijk',feats,w).detach().cpu().numpy()
+    if False and "LEVEL2":
+        masked = torch.tensor(myCAM_aug,device=device) * normalized_augmentations
+        # output2 = cnn(masked)
+        if CAT_FEATS:
+            output2,o33,o43 = hooked_cnn(masked)
+        else:
+            output2,o43 = hooked_cnn(masked)
+        if output2.ndim == 4:
+            output2 = output2.mean(dim=(2,3))
+        probs2 = torch.softmax(output2,dim=-1)
+        score2 = torch.log(probs2[:,target_id])
+        
+        w2,b2 = solve_regression(feats,score2,lambda_ = 0.01)
+        myCAM_aug2 = torch.einsum('ijk,j->ik',feats,w2).detach().cpu().numpy()
+        myCAM_aug2 = myCAM_aug2.reshape(myCAM_aug2.shape[0],feats_bchw.shape[2],feats_bchw.shape[3])
+        myCAM_aug2 = myCAM_aug2.clip(0)
+        myCAM_aug2 = torch.nn.functional.interpolate(torch.tensor(myCAM_aug2[:,None]),size=(224,224),mode='bilinear',align_corners=False).numpy()
+        
+    
+    """
+    indicators = torch.ones(myCAM_aug.shape[0],1,224,224,device=device).requires_grad_(True)
+    indicators_cam = torch.nn.functional.interpolate(indicators,size=(myCAM_aug.shape[1],myCAM_aug.shape[2]),mode='bilinear',align_corners=False,antialias=True)
+    for_backward = (indicators_cam* myCAM_aug[:,None].detach())
+    for_backward.sum().backward()
+    dutils.img_save(indicators.grad[0,0]/indicators.grad[0,0].max(),'indicators.png',cmap='jet')
+    """
+    def viz_ix(vix,myCAM,augmentations):
+        dutils.img_save(myCAM[vix]/myCAM[vix].max(),'mycam.png',cmap='jet')
+        dutils.img_save(augmentations[vix],'aug.png')
+    viz_ix(2,myCAM_aug,augmentations)    
+    # viz_ix(2,myCAM_aug2,augmentations)    
+
+    # ref_output = 
+    assert False    
+    if dataset == 'imagenet':
+        normalized_ref = normalize_tensor(ref)
+    elif dataset == 'pascal':
+        if os.environ.get('DBG_CORRECT_PASCAL_NORMALIZATION',False) == '1':
+            # import ipdb; ipdb.set_trace()
+            normalized_ref = normalize_pascal(ref)
+        else:
+            normalized_ref = normalize_tensor(ref)                                
+    ref_output= cnn(ref)
+    ref_output = ref_output[:,target_id]
+    ref_activation = gCAM_CLASS.activations['value']
+    ref_activation = torch.tensor(ref_activation,device=device).view(ref_activation.shape[0],a.shape[1],-1).detach()
+    myCAM = torch.einsum('ijk,j->ik',ref_activation,w).detach().cpu().numpy()
+    myCAM = myCAM.reshape(myCAM.shape[0],a.shape[2],a.shape[3])
+    myCAM = myCAM.clip(0)
+    myCAM = torch.nn.functional.interpolate(torch.tensor(myCAM[:,None]),size=(224,224),mode='bilinear',align_corners=False).numpy()
+    dutils.img_save(myCAM[0]/myCAM[0].max(),'mycam_ref.png',cmap='jet')
+    dutils.img_save(ref[0],'ref.png') 
+           
+if False:
+    score = output[:, target_id]
+    a = gCAM_CLASS.activations['value']
+    feats = torch.tensor(a,device=device).view(a.shape[0],a.shape[1],-1).detach()
+    feats_centered = feats
+    # feats_centered = (feats - feats.mean(dim=(0,2),keepdim=True))
+    w = torch.randn(a.shape[1],device=device).requires_grad_(True)
+    b = torch.zeros(1,device=device).requires_grad_(True)
+    # y_pred = torch.einsum('ijk,j->i',feats,w) + b
+    y_gt = score.detach()
+    optimizer_reg = torch.optim.Adam([w,b],lr=0.01)
+    for ireg in range(1000):
+        
+        y_pred = torch.einsum('ijk,j->i',feats_centered,w) + b
+        mse_loss = torch.nn.functional.mse_loss(y_pred,y_gt)
+        l1_reg = w.abs().sum()
+        l2_reg = w.pow(2).sum()
+        loss = mse_loss + 100*l1_reg + 0*l2_reg
+        optimizer_reg.zero_grad()
+        loss.backward()
+        optimizer_reg.step()
+        print(mse_loss.item(),loss.item())
+    myCAM = torch.einsum('ijk,j->ik',feats_centered,w).detach().cpu().numpy()
+    myCAM = myCAM.reshape(myCAM.shape[0],a.shape[2],a.shape[3])
+    myCAM = myCAM.clip(0)
+    myCAM = torch.nn.functional.interpolate(torch.tensor(myCAM[:,None]),size=(224,224),mode='bilinear',align_corners=False).numpy()
+    def viz_ix(vix,myCAM,augmentations):
+        dutils.img_save(myCAM[vix]/myCAM[vix].max(),'mycam.png',cmap='jet')
+        dutils.img_save(augmentations[vix],'aug.png')
+    viz_ix(2,myCAM,augmentations)
+if False:
+    for k in running_saliency_dicts[0].keys():
+        to_save = running_saliency_dicts[0][k]['avg_saliency']    
+        dutils.img_save((to_save-to_save.min())/(to_save.max()-to_save.min()),f'{k}.png',cmap='jet')
+            
+    # running_saliency = running_saliency_dicts[0]
+    # to_save = running_saliency['relevancecam']['running_saliency_backprop']
+    # dutils.img_save((to_save-to_save.min())/(to_save.max()-to_save.min()),'backpropr.png',cmap='jet')
+    # to_save = running_saliency['gradcam']['running_saliency_backprop']
+    # dutils.img_save((to_save-to_save.min())/(to_save.max()-to_save.min()),'backpropg.png',cmap='jet')    
+    # to_save = running_saliency['gradcampp']['running_saliency_backprop']
+    # dutils.img_save((to_save-to_save.min())/(to_save.max()-to_save.min()),'backpropgp.png',cmap='jet')        
+    # to_save = running_saliency['layercam']['running_saliency_backprop']
+    # dutils.img_save((to_save-to_save.min())/(to_save.max()-to_save.min()),'backpropl.png',cmap='jet')            
+if False:
+    running_saliency = running_saliency_dicts[0]
+    to_save = running_saliency['relevancecam']['running_saliency_backprop']
+    dutils.img_save((to_save-to_save.min())/(to_save.max()-to_save.min()),'backpropr.png',cmap='jet')
+    to_save = running_saliency['gradcam']['running_saliency_backprop']
+    dutils.img_save((to_save-to_save.min())/(to_save.max()-to_save.min()),'backpropg.png',cmap='jet')    
+    to_save = running_saliency['gradcampp']['running_saliency_backprop']
+    dutils.img_save((to_save-to_save.min())/(to_save.max()-to_save.min()),'backpropgp.png',cmap='jet')        
+    to_save = running_saliency['layercam']['running_saliency_backprop']
+    dutils.img_save((to_save-to_save.min())/(to_save.max()-to_save.min()),'backpropl.png',cmap='jet')                
+if False:
+    import dutils
+    import glob
+    bad_imxs = []
+    chattopadhyay_method_loaded = metric_method_loaded[metricname]
+    for imix in range(len(common_directories[metricname])):
+        # for methodname in methodnames:
+        scorecam_ix= chattopadhyay_method_loaded['scorecam'][imix]
+        gpnn_gradcam_ix = chattopadhyay_method_loaded['gpnn-gradcam'][imix]
+        if scorecam_ix['increase_indicator'] > gpnn_gradcam_ix['increase_indicator']   :
+            bad_imxs.append(imix)
+            print(imix)
+            print(imdirs[imix])
+            if imix > 100:
+                break
+            if len(bad_imxs) < 3:
+                continue
+        
+            save_dict = {}
+            for methodnamej in methodnames:
+                # import ipdb; ipdb.set_trace()
+                try:
+                    # dutils.img_save(chattopadhyay_method_loaded[methodnamej][imix]['saliency'],f'{methodnamej}.png')
+                    saliency = chattopadhyay_method_loaded[methodnamej][imix]['saliency']
+                    save_dict[methodnamej] =saliency/saliency.max()
+                except KeyError as e:
+                    imroot = os.path.basename(imdirs[imix].rstrip(os.path.sep))
+                    d = f'/root/evaluate-saliency-4/GPNN/benchmark/results-librecam/{dataset}-{methodnamej}-{modelname}/{imroot}/'
+                    xzfiles = glob.glob(os.path.join(d,'*.xz'))
+                    print(xzfiles[0])
+                    import lzma
+                    import pickle
+                    with lzma.open(xzfiles[0],'rb') as f:
+                        # loaded = lzma.load((f))
+                        loaded_data = pickle.load(f)
+                    saliency = loaded_data['saliency']
+                    save_dict[methodnamej] = saliency/saliency.max()
+                    # dutils.img_save(loaded_data['saliency'],f'{methodnamej}.png')            
+            dutils.img_dict_save(save_dict,f'{imix}.png',cmap='jet')
+            break
+    # pass
+if False:
+    ix = 2
+    dutils.img_save(augmentations[ix],'a.png')
+    dutils.img_save(cams[ix],'c.png',cmap='jet')
+    dutils.img_save(unpermuted_saliency[ix],'us.png',cmap='jet')
+    

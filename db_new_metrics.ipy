@@ -1,0 +1,11 @@
+import os
+import lzma
+import pickle
+from benchmark import settings
+methodname = 'gradcam'
+#==================================================
+methodxz = os.path.join(settings.RESULTS_DIR_librecam,f'{dataset_stub}{methodname}-{modelname}.xz')
+print(os.path.exists(methodxz))
+with lzma.open(methodxz,'rb') as f:
+    methoddata = pickle.load(f)
+

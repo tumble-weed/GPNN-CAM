@@ -1,0 +1,82 @@
+import glob
+import os
+from collections import defaultdict
+IMAGENET_ROOT = "/root/bigfiles/dataset/imagenet"
+image_paths = sorted(glob.glob(os.path.join(IMAGENET_ROOT,'images','val','*.JPEG')))
+difficult = defaultdict(list)
+RUN_MODE = 'save'
+# RUN_MODE = 'load'
+BREAK = False
+if RUN_MODE == 'save':
+    for i,impath in enumerate(image_paths):
+        imroot = os.path.basename(impath).split('.')[0]
+        dataset = 'imagenet'
+        if dataset in ['imagenet','']:
+
+            import imagenet_localization_parser
+            from benchmark.synset_utils import get_synset_id,synset_id_to_imagenet_class_ix
+            bbox_info = imagenet_localization_parser.get_voc_label(
+                root_dir = os.path.join(IMAGENET_ROOT,'bboxes','val'),
+                x = imroot)
+        #     print(bbox_info)
+            # import ipdb;ipdb.set_trace()
+            target_ids = []
+            classnames = []
+            W,H = bbox_info['annotation']['size']['width'],bbox_info['annotation']['size']['height']
+            W,H = int(W),int(H)
+            if len(bbox_info['annotation']['object']) > 1:   
+                for object in bbox_info['annotation']['object']:
+                    synset_id = object['name']
+                #     print(synset_id)
+                    target_id = synset_id_to_imagenet_class_ix(synset_id)
+                #     print(target_id)
+                    import imagenet_synsets
+                    classname = imagenet_synsets.synsets[target_id]['label']
+                    classname = classname.split(',')[0]
+                    if False:
+                        classname = '_'.join(classname)
+                    else:
+                        classname = classname.replace(' ','_')                
+                    
+                    # assert False, 'untested for multiple targets'
+                    # import ipdb;ipdb.set_trace()
+                    target_ids.append(target_id)
+                    classnames.append(classname)
+                    # import ipdb;ipdb.set_trace()
+                    # bbox_info['annotation']['segmented']
+                    # bbox_info['annotation']['object'][0].keys()
+                    # import ipdb;ipdb.set_trace()
+                    x0,y0,x1,y1 = object['bndbox']['xmin'],object['bndbox']['ymin'],object['bndbox']['xmax'],object['bndbox']['ymax']
+                    x0y0x1y1 = int(x0),int(y0),int(x1),int(y1)
+                    object_area = (int(x0y0x1y1[2])-int(x0y0x1y1[0]))*(int(x0y0x1y1[3])-int(x0y0x1y1[1]))
+                    relative_area = object_area/(W*H)    
+                    is_difficult = relative_area < 1/4
+                    if is_difficult:
+                        difficult[imroot].append(target_id)
+                        # import sys;sys.exit()
+                        # BREAK = True
+                # print(target_ids)
+                # print(classnames)
+                before_unique = (difficult[imroot])
+                difficult[imroot] = list(set(difficult[imroot]))
+                if len(difficult[imroot]) < 2:
+                    if len(difficult[imroot]) == 1:
+                        # print(before_unique)
+                        # import ipdb; ipdb.set_trace()
+                        pass
+                    del difficult[imroot]
+                if len(difficult[imroot]) > 1:
+                    print(difficult[imroot])
+                    import ipdb; ipdb.set_trace()
+                    
+                
+        if BREAK:
+            break
+                
+    import json
+    savefile = 'imagenet_difficult.txt'            
+    with open(savefile,'w') as f:
+        json.dump(difficult,f)
+elif RUN_MODE == 'load':
+    with open(savefile,'r') as f:
+        difficult = json.load(f)

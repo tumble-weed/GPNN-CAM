@@ -1,0 +1,16 @@
+%load_ext autoreload
+%autoreload 2
+import lzma
+import pickle
+fnames = [
+    "/root/bigfiles/other/results-librecam/pascal-gradcam-vgg16/000001/dog11.xz",
+    "/root/bigfiles/other/results-librecam/pascal-gradcam-vgg16/000001/person14.xz"]
+for fname in fnames:
+    print(fname)
+    with lzma.open(fname,'r') as f:
+        loaded = pickle.load(f)
+        print(loaded['incorrectly_predicted'],
+              loaded['classname']
+              )
+        
+        # assert False

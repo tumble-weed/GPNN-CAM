@@ -1,0 +1,17 @@
+%load_ext autoreload
+%autoreload 2
+import dutils
+dutils.SYNC = True
+dutils.SYNC_DIR = dutils.ROOT_DIR + '/viz_aug_for_paper'
+!mkdir -p /root/evaluate-saliency-4/GPNN/debug-results/viz_aug_for_paper
+M = normalized_augmentations.max()
+m = normalized_augmentations.min()
+normalized_augmentations1 = (normalized_augmentations - m) / (M - m)
+naug = normalized_augmentations.shape[0]
+for kk in range(naug):
+    # if kk > 10:
+    #     break
+    print(kk)
+    dutils.img_save(normalized_augmentations1[kk], f'viz_aug_for_paper/aug{kk}.png',syncable=True,use_matplotlib=False)
+    dutils.img_save(cam_224[kk], f'viz_aug_for_paper/cam{kk}.png',syncable=True,cmap='jet',use_matplotlib=False)
+    # break

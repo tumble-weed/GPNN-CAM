@@ -1,0 +1,59 @@
+%load_ext autoreload
+%autoreload 2
+import os
+import itertools
+from benchmark import settings
+import collect_lzma
+"""
+
+done = [
+
+
+]
+"""
+remaining_methods = [
+
+]
+methodnames = [
+    'gradcam',
+    'gradcampp',
+    'scorecam',    
+
+    'relevancecam',
+    'layercam',
+    'cameras',
+    
+    ]
+datasets = [
+    'imagenet',
+    'pascal'
+    ]
+modelnames = [
+    'vgg16',
+    'resnet50']
+gen = itertools.product(methodnames,datasets,modelnames)
+for methodname,dataset,modelname in gen:
+    # cmd = f'DBG_CORRECT_PASCAL_NORMALIZATION=1 ADD_SCALE_NOISE=0 DBG_NO_INCORRECT=1 CUDA_VISIBLE_DEVICES= python -m benchmark.pascal_run_competing_saliency_librecam  --methodnames {methodname} --modelname {modelname} --skip True --skip_incorrect False --dataset {dataset} --run_metric none --purge_metric false'
+    SKIP = 'false'
+    cmd = f'CUDA_VISIBLE_DEVICES= python -m benchmark.run_metrics_librecam2 --method {methodname} --model {modelname} --metric chattopadhyay --skip {SKIP} --dataset {dataset} --median_k 0'
+    os.system(cmd)
+    os.system(f'find {settings.RESULTS_DIR_librecam}/{dataset}-chattopadhyay-{methodname}-{modelname} -type f -name "*.xz" | grep -i "\.xz$" | wc -l')
+    # import ipdb;ipdb.set_trace()
+    if False:
+        """
+        no need to collect pointing game metrics into single file, this should be small enough
+        """
+        import ipdb;ipdb.set_trace()
+        collect_lzma.main(
+            
+                SAVE_OR_LOAD = 'save',
+                METRICS_OR_SALIENCY = 'metrics',
+                SAVE_ALL_OR_APPEND = 'all',
+                REMOVE_ORIGINAL_DIR = True,
+                methodname= methodname,
+                metricname = 'pointing_game',
+                modelname = modelname,
+                dataset = dataset,
+        )
+        
+

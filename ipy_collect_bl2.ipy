@@ -1,0 +1,72 @@
+import blosc2
+import os
+import glob
+import numpy as np
+from benchmark import settings
+chunk_size = 100
+#======================================================================
+if False:
+    folder = 'some_bl2'
+    out_folder = '.'
+else:
+    folder = os.path.join(settings.RESULTS_DIR_librecam,'imagenet-gpnn-onlygen-save')
+    out_folder = settings.RESULTS_DIR_librecam
+bl2_paths_I = glob.glob(os.path.join(folder,'*/*I.bl2'))
+# bl2_paths_D = glob.glob(os.path.join(folder,'*/*D.bl2'))
+bl2_paths_D = [p[:-5] + 'D.bl2' for p in bl2_paths_I]
+bl2_paths_I = list(bl2_paths_I)
+bl2_paths_D = list(bl2_paths_D)
+n_chunks = (len(bl2_paths_I) + chunk_size - 1)//chunk_size
+#======================================================================
+def collect_chunk(paths,folder,chunk_savename,dtype=np.float32):
+    collected = []
+    for bl2_path in paths:
+        reloaded = blosc2.load_array(bl2_path)            
+        collected.append(reloaded)
+    collected = np.stack(collected,axis=0).astype(dtype)
+    blosc2.save_array(collected,
+                    os.path.join(folder,chunk_savename),
+                    mode='w')            
+for cix in range(n_chunks):
+    cix = cix+1
+    chunk_paths_I = bl2_paths_I[cix*chunk_size:(cix+1)*chunk_size]
+    chunk_paths_D = bl2_paths_D[cix*chunk_size:(cix+1)*chunk_size]
+    collect_chunk(chunk_paths_I,out_folder,f'collected_gpnn_I_{cix}.bl2',dtype=np.uint16)
+    collect_chunk(chunk_paths_D,out_folder,f'collected_gpnn_D_{cix}.bl2',dtype=np.float16)
+    os.system(f'du -sh {folder}')
+    os.system(f'du -sh {out_folder}/collected_gpnn_I_{cix}.bl2')
+    os.system(f'du -sh {out_folder}/collected_gpnn_D_{cix}.bl2')
+    if 'reload':
+        D_reloaded = blosc2.load_array(os.path.join(out_folder,f'collected_gpnn_D_{cix}.bl2'))
+        I_reloaded = blosc2.load_array(os.path.join(out_folder,f'collected_gpnn_I_{cix}.bl2'))
+        D = np.stack([blosc2.load_array(bl2_path_D) for bl2_path_D in chunk_paths_D],axis=0)
+        I = np.stack([blosc2.load_array(bl2_path_I) for bl2_path_I in chunk_paths_I],axis=0)
+        D_diff = np.abs(D_reloaded - D).mean()
+        I_diff = np.abs(I_reloaded - I).mean()
+        print(D_diff)
+        print(I_diff)
+    # break
+    for bl2_path in chunk_paths_I:
+        os.remove((bl2_path))
+    for bl2_path in chunk_paths_D:
+        os.remove((bl2_path))
+
+# import pickle
+import json
+with open(os.path.join(out_folder,'filenames_for_gpnn_onlysave'),'w') as f:
+    # pickle.dump(bl2_paths_I,f)
+    json.dump(bl2_paths_I,f)
+    
+if False:
+    #======================================================================
+    bl2_paths = glob.glob(os.path.join(folder,'*/*D.bl2'))
+    bl2_paths = list(bl2_paths)
+    collected = []
+    for bl2_path in bl2_paths:
+        reloaded = blosc2.load_array(bl2_path)            
+        # break
+        collected.append(reloaded)
+    collected0 = np.stack(collected,axis=0).astype(np.float32) 
+    collected = np.stack(collected,axis=0).astype(np.float16)
+    blosc2.save_array(collected,'collected_D.bl2',mode='w')            
+    #======================================================================

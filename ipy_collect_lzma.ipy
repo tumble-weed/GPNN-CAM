@@ -1,0 +1,119 @@
+%load_ext autoreload
+%autoreload 2
+import lzma
+import os
+import glob
+import pickle
+import numpy as np
+from benchmark import settings
+from collections import defaultdict
+import blosc2
+from collect_lzma import *
+
+if not os.environ.get('CUSTOM',None) == '1':
+    SAVE_OR_LOAD = 'save'
+    METRICS_OR_SALIENCY = 'saliency'
+    SAVE_ALL_OR_APPEND = 'all'
+    REMOVE_ORIGINAL_DIR = True
+    methodname= 'scorecam'
+    metricname = 'chattopadhyay'
+    modelname = 'resnet50'
+    dataset = 'imagenet'
+    
+if SAVE_OR_LOAD== 'save':
+
+    if METRICS_OR_SALIENCY == 'metrics':
+        metrics_data_obj = MetricsData(SAVE_ALL_OR_APPEND,
+                                        metricname,
+                                        dataset,methodname,modelname,
+                                        )
+        if False:
+            methoddir = os.path.join(settings.METRICS_DIR_librecam,f'{dataset}-{metricname}-{methodname}-{modelname}')
+            outdir = settings.METRICS_DIR_librecam
+    elif METRICS_OR_SALIENCY == 'saliency':
+        methoddir = os.path.join(settings.RESULTS_DIR_librecam,f'{dataset}-{methodname}-{modelname}')
+        outdir = settings.RESULTS_DIR_librecam
+    print(methoddir)
+    arrayix = 0
+    im_save_dirs = glob.glob(os.path.join(methoddir,'*/'))
+    # print(im_save_dirs)
+    # pklname = glob.glob(os.path.join(im_save_dir,'*.xz
+
+    # outdir = methoddir
+    
+    # out_all = defaultdict(dict)
+    out_all = defaultdict(list)
+    if False:
+        saliency = []
+        ref = []
+    # import ipdb; ipdb.set_trace()
+    for i,im_save_dir in enumerate(im_save_dirs):
+        # if arrayix > 500:
+        #     DBG_BREAK_500 = 1
+        #     break
+        imroot = os.path.basename(im_save_dir.rstrip(os.path.sep))
+        # print(i,imroot)
+        pklnames = glob.glob(os.path.join(im_save_dir,'*.xz'))
+        # assert len(pklnames) == 1,'len(pklnames) = %d'%len(pklnames)
+        for pklname in pklnames:
+            print(arrayix,i,pklname)
+            with lzma.open(pklname,'rb') as f:
+                data = pickle.load(f)
+            classname = data['classname']
+            if SAVE_ALL_OR_APPEND == 'all':
+                if False:
+                    if METRICS_OR_SALIENCY == 'saliency':
+                        saliency.append(data.pop('saliency'))
+                        ref.append(data.pop('ref'))
+                        
+                        data['arrayix'] = arrayix
+                        arrayix += 1
+                        out_all[imroot].append( {classname:data})
+                        # import ipdb; ipdb.set_trace()
+                    elif METRICS_OR_SALIENCY == 'metrics':
+                        assert False,'not implemented'
+            if SAVE_ALL_OR_APPEND == 'append':
+                if False:
+                    # """
+                    if METRICS_OR_SALIENCY == 'saliency':
+                        out = {imroot:{classname:data}}
+                        with lzma.open(os.path.join(outdir,'out.xz'),'ab') as f:
+                            pickle.dump(out,f)
+                    elif METRICS_OR_SALIENCY == 'metrics':
+                        assert False,'not implemented'
+                    # """
+            # break
+            # if i > 5:
+            #     break
+    if False:
+        if SAVE_ALL_OR_APPEND == 'all':
+            # """
+            import blosc2
+            # outdir = methoddir
+            with lzma.open(os.path.join(outdir,f'{dataset}-{methodname}-{modelname}.xz'),'wb') as f:
+                pickle.dump(out_all,f)
+            # import ipdb; ipdb.set_trace()
+            saliency = np.stack(saliency)
+            # ref = np.stack(ref)
+            blosc2.save_array(saliency,os.path.join(outdir,f'{dataset}-{methodname}-{modelname}-saliency.bl2'),mode='w')
+            # blosc2.save_array(ref,os.path.join(outdir,f'{dataset}-{methodname}-{modelname}-ref.bl2'),mode='w')
+            with lzma.open(os.path.join(outdir,f'{dataset}-{methodname}-{modelname}-saliency2.bl2'),'wb') as f:
+                pickle.dump(saliency,f)
+            
+            # """
+        os.system(f'du -sh {outdir}/{dataset}-{methodname}-{modelname}.xz')
+        os.system(f'du -sh {outdir}/{dataset}-{methodname}-{modelname}-saliency.bl2')
+        # os.system(f'du -sh {outdir}/{dataset}-{methodname}-{modelname}-saliency2.bl2')
+    if REMOVE_ORIGINAL_DIR:
+        # assert False
+        os.system(f'rm -rf {methoddir}')
+        
+elif SAVE_OR_LOAD == 'load':
+    if METRICS_OR_SALIENCY == 'saliency':
+        outdir = settings.RESULTS_DIR_librecam
+    
+    if SAVE_ALL_OR_APPEND == 'all':
+        with lzma.open(os.path.join(outdir,f'{dataset}-{methodname}-{modelname}.xz'),'rb') as f:
+            loaded = pickle.load(f)
+        loaded_saliency = blosc2.load_array(os.path.join(outdir,f'{dataset}-{methodname}-{modelname}-saliency.bl2'))            
+        # loaded_ref = blosc2.load_array(os.path.join(outdir,f'{dataset}-{methodname}-{modelname}-ref.bl2')            

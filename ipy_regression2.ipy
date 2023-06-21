@@ -1,0 +1,52 @@
+#=======================================================
+%load_ext autoreload
+%autoreload 2
+def multilevel_cam():
+from regression import MyCAM
+device = normalized_augmentations.device
+myCAM_CLASS = MyCAM(cnn,dataset)
+if dataset == 'imagenet':
+    myCAM_CLASS2 = MyCAM(cnn,dataset,feat_layers=[cnn.features[33]])
+elif dataset == 'pascal':
+    myCAM_CLASS2 = MyCAM(cnn,dataset,feat_layers=[cnn.features[25]])
+
+myCAM_CLASS.solve(normalized_augmentations,target_id)
+cam_coarse,scores,probs = myCAM_CLASS.get_raw_cam(normalized_augmentations)
+cam_coarse_up = torch.nn.functional.interpolate(torch.tensor(cam_coarse,device=device)[:,None],(14,14),mode = 'bilinear')
+# cam_coarse_up = tensor_to_numpy(cam_coarse_up)
+myCAM_CLASS2.solve2(normalized_augmentations,target_id,cam_coarse_up) 
+cam_fine,scores,probs = myCAM_CLASS2(normalized_augmentations)    
+cam_coarse_224 = torch.nn.functional.interpolate(torch.tensor(cam_coarse,device=device)[:,None],(224,224),mode = 'bilinear')
+
+vix=0
+dutils.img_save(cam_coarse_224[vix],'coarse.png')    
+dutils.img_save(cam_fine[vix],'fine.png')    
+dutils.img_save(normalized_augmentations[vix],'aug.png')
+
+#=======================================================
+# def solve_standard_regression(X,y):
+# # if True:
+#     # Add a column of ones to X for the bias term
+#     X = torch.cat((X, torch.ones(X.shape[0], 1,device=X.device)), dim=1)
+
+#     # Remove redundant columns from X
+#     u, s, v = torch.svd(X)
+#     tol = s.max() * X.shape[1] * torch.finfo(s.dtype).eps
+#     mask = s > tol
+#     """
+#     X = torch.mm(u[:, mask], torch.diag(s[mask]).mm(v[:, mask].t()))
+
+#     # Calculate the OLS solution for W and b
+#     X_t = torch.transpose(X, 0, 1)  # Transpose of X
+#     XX_t_inv = torch.inverse(torch.matmul(X_t, X))  # Inverse of (X^T * X)
+#     """
+#     Xt_X = torch.mm(v[ mask,:].t(), torch.diag(s[mask]**2).mm(v[ mask,:]))
+#     XX_t_inv = torch.inverse(Xt_X)
+#     W = torch.matmul(torch.matmul(XX_t_inv, X_t), y.unsqueeze(1))[:-1]  # W = (X^T * X)^-1 * X^T * y, excluding the last element (bias term)
+#     b = W[-1]  # Extract the bias term from the last element of W
+
+#     # Print the value of W and b
+#     print(f"W = {W.squeeze()}")
+#     print(f"b = {b.item()}")
+#     return W,b
+# # solve_standard_regression(X,y)

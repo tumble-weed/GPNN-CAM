@@ -1,0 +1,113 @@
+%load_ext autoreload
+%autoreload 2
+from benchmark.metrics import run_chattopadhyay,run_pointing_game
+from benchmark.metrics_data_handler import MetricsDataHandler
+import dutils
+
+def run_metric_and_dump(run_metric,args,metrics_handler_obj,imroot,classname,target_id):
+    metrics_data = run_metric(*args)
+    metrics_handler_obj.dump(imroot,classname,target_id,metrics_data)
+    pass    
+class MetricsRunner():
+    def __init__(self,
+                 dataset,
+                 methodname,
+                 modelnames,             
+                 models,
+                 metrics_to_run  = ['chattopadhyay','pointing_game'],
+                 ):
+        self.metrics_to_run = metrics_to_run
+        self.modelnames = modelnames
+        self.models = models
+        self.methodname = methodname
+        self.dataset = dataset
+        self.metrics_objs_per_model_metric = {modelname:{metricname:None for metricname in metrics_to_run} for modelname in modelnames}
+        for modelname in modelnames:
+            for metricname in metrics_to_run:
+                from benchmark.metrics_data_handler import MetricsDataHandler
+                metrics_obj = MetricsDataHandler(dataset,metricname,methodname,modelname)
+                self.metrics_objs_per_model_metric[modelname][metricname] = metrics_obj    
+    def run(self,imroot,ref,bbox_info,saliency_datas,target_id,classname,dataset):
+        from benchmark.metrics import run_chattopadhyay,run_pointing_game
+        for (modelname,model,model_saliency_data) in zip(self.modelnames,self.models,saliency_datas):
+
+            for metricname in self.metrics_to_run:    
+                metrics_obj = self.metrics_objs_per_model_metric[modelname][metricname]
+                for methodname in model_saliency_data:
+                    print(colorful.chartreuse(f'{metricname}{modelname}{methodname}'))
+                    saliency = model_saliency_data[methodname]['saliency']
+
+                    if metricname == 'chattopadhyay':
+                        if False:
+                            metric_data =run_chattopadhyay(ref,saliency,model,target_id,dataset)
+                        dutils.run_in_another_thread(
+                            run_chattopadhyay,args=[ref,saliency,model,target_id,dataset],
+                            debug=True
+                        )
+                    elif metricname == 'pointing_game':
+                        if False:
+                            metric_data = run_pointing_game(ref,saliency,model,target_id,imroot,
+                            bbox_info,dataset,
+                            # IMAGENET_ROOT
+                            )
+                        if False:
+                            dutils.run_in_another_thread(
+                                run_pointing_game,
+                                args=[ref,saliency,model,target_id,imroot,
+                            bbox_info,dataset],
+                                debug=True
+                            )
+                            metrics_obj.dump(imroot,classname,target_id,metric_data)
+                        dutils.run_in_another_thread(
+                        run_metric_and_dump,
+                        args=[run_pointing_game,
+                                [ref,saliency,model,target_id,imroot,
+                                bbox_info,dataset],
+                                metrics_obj,imroot,classname,target_id
+                                ],
+                        debug=True
+                            )
+                        assert False
+                    
+                    # assert False   
+metrics_runner = MetricsRunner(
+                     dataset,
+                 methodname,
+                 modelnames,             
+                 models,
+                 metrics_to_run  = ['chattopadhyay','pointing_game'],)
+metrics_runner.run(imroot,ref,bbox_info,saliency_datas,target_id,classname,dataset)
+if False:
+    metrics_objs = {}
+    for modelname in modelnames:
+        for metricname in metrics_to_run:
+            metrics_obj = MetricsDataHandler(dataset,metricname,methodname,modelname)
+        metrics_objs[metricname] = metrics_obj
+    if len(metrics_to_run) !=0:
+        for metricname in metrics_to_run:
+            metrics_obj = metrics_objs[metricname]
+            for modelix,(model,model_saliency_data) in enumerate(zip(models,saliency_datas)):
+                for methodname in model_saliency_data:
+                    print(colorful.chartreuse(f'{metricname}{modelix}{methodname}'))
+                    saliency = model_saliency_data[methodname]['saliency']
+                    if metricname == 'chattopadhyay':
+                        if False:
+                            metric_data =run_chattopadhyay(ref,saliency,model,target_id,dataset)
+                        dutils.run_in_another_thread(
+                            run_chattopadhyay,args=[ref,saliency,model,target_id,dataset],
+                            debug=True
+                        )
+                    elif metricname == 'pointing_game':
+                        if False:
+                            metric_data = run_pointing_game(ref,saliency,model,target_id,imroot,
+                            bbox_info,dataset,
+                            # IMAGENET_ROOT
+                            )
+                        dutils.run_in_another_thread(
+                            run_pointing_game,
+                            args=[ref,saliency,model,target_id,imroot,
+                        bbox_info,dataset],
+                            debug=True
+                        )
+                    metrics_obj.dump(imroot,classname,target_id,metric_data)
+                    # assert False

@@ -1,0 +1,70 @@
+import lzma
+import os
+import glob
+import pickle
+from benchmark import settings
+from collections import defaultdict
+SAVE_OR_LOAD = 'load'
+# SAVE_OR_LOAD = 'save'
+METRICS_OR_SALIENCY = 'saliency'
+SAVE_ALL_OR_APPEND = 'all'
+REMOVE_ORIGINAL_DIR = True
+methodname= 'gradcam'
+metricname = 'chattopadhyay'
+modelname = 'vgg16'
+dataset = 'pascal'
+if SAVE_OR_LOAD== 'save':
+
+    if METRICS_OR_SALIENCY == 'metrics':
+        methoddir = os.path.join(settings.METRICS_DIR_librecam,f'{dataset}-{metricname}-{methodname}-{modelname}')
+        outdir = settings.METRICS_DIR_librecam
+    elif METRICS_OR_SALIENCY == 'saliency':
+        methoddir = os.path.join(settings.RESULTS_DIR_librecam,f'{dataset}-{methodname}-{modelname}')
+        outdir = settings.RESULTS_DIR_librecam
+    print(methoddir)
+    im_save_dirs = glob.glob(os.path.join(methoddir,'*/'))
+    # print(im_save_dirs)
+    # pklname = glob.glob(os.path.join(im_save_dir,'*.xz
+
+    # outdir = methoddir
+    
+    out_all = defaultdict(dict)
+    
+    for i,im_save_dir in enumerate(im_save_dirs):
+        
+        imroot = os.path.basename(im_save_dir.rstrip(os.path.sep))
+        print(i,imroot)
+        pklnames = glob.glob(os.path.join(im_save_dir,'*.xz'))
+        # assert len(pklnames) == 1,'len(pklnames) = %d'%len(pklnames)
+        for pklname in pklnames:
+            with lzma.open(pklname,'rb') as f:
+                data = pickle.load(f)
+            classname = data['classname']
+            if SAVE_ALL_OR_APPEND == 'all':
+                out_all[imroot].update( {classname:data})
+            if SAVE_ALL_OR_APPEND == 'append':
+                # """
+                out = {imroot:{classname:data}}
+                with lzma.open(os.path.join(outdir,'out.xz'),'ab') as f:
+                    pickle.dump(out,f)
+                # """
+            # break
+            # if i > 5:
+            #     break
+    if SAVE_ALL_OR_APPEND == 'all':
+        # """
+        # outdir = methoddir
+        with lzma.open(os.path.join(outdir,f'{dataset}-{methodname}-{modelname}.xz'),'wb') as f:
+            pickle.dump(out_all,f)
+        # """
+    os.system(f'du -sh {outdir}/{dataset}-{methodname}-{modelname}.xz')
+    if REMOVE_ORIGINAL_DIR:
+        os.system(f'rm -rf {methoddir}')
+        
+elif SAVE_OR_LOAD == 'load':
+    if METRICS_OR_SALIENCY == 'saliency':
+        outdir = settings.RESULTS_DIR_librecam
+    
+    if SAVE_ALL_OR_APPEND == 'all':
+        with lzma.open(os.path.join(outdir,f'{dataset}-{methodname}-{modelname}.xz'),'rb') as f:
+            loaded = pickle.load(f)

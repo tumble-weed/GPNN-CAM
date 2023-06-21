@@ -1,0 +1,12 @@
+%load_ext autoreload
+%autoreload 2
+
+from pytorch_lasso.lasso.linear import dict_learning, dict_evaluate
+from sklearn import linear_model
+clf = linear_model.Lasso(alpha=0.1)
+# clf.fit([[0,0], [1, 1], [2, 2]], [0, 1, 2])
+clf.fit(X.sum(dim=-1).cpu().numpy(),Y.squeeze().cpu().numpy())
+
+print(clf.coef_)
+
+print(clf.intercept_)

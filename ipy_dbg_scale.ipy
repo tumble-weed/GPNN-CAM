@@ -1,0 +1,10 @@
+%load_ext autoreload
+%autoreload 2
+
+
+cnn_ =self.CAM_CLASSES[0].hooked_cnn            
+scale_probs = scale_test(cnn_,
+           normalized_augmentations,
+               target_id,
+                  NAUG = 1,
+                  START=3)

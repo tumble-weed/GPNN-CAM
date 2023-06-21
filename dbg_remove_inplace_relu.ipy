@@ -1,0 +1,8 @@
+%load_ext autoreload
+%autoreload 2
+import torch.nn
+for mod in model.modules():
+    if isinstance(mod,torch.nn.ReLU):
+        print(mod)
+        print(mod.inplace)
+        mod.inplace = False

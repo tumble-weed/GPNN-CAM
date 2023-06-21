@@ -1,0 +1,36 @@
+%load_ext autoreload
+%autoreload 2
+if False:
+    vix = 4
+    dutils.img_save(normalized_augmentations[vix],'a.png')
+    dutils.img_save(cam_224[vix],'s.png')        
+if False:
+    ref = config['input_img']
+    s0  = running_saliency_dicts[0]['gpnn-mycam']['avg_saliency']
+    s1  = running_saliency_dicts[1]['gpnn-mycam']['avg_saliency']
+    dutils.img_save(s0,'s0.png')
+    dutils.img_save(s1,'s1.png')
+    dutils.img_save(ref,'ref.png')
+    print(config['imagenet_target'])
+    
+if False:
+    s0 = avg_saliency
+    dutils.img_save(s0,'s0.png')
+    
+    dutils.img_save(ref,'ref.png')
+    print(target_id)
+    vix=5
+    print(vix)
+    dutils.img_save(augmentations[vix],'a.png')
+    dutils.img_save(cams[vix,None],'as.png')
+    # dutils.img_save(s1,'s1.png')
+    
+if True:
+
+    print(target_id)
+    vix=4
+    print(vix)
+    dutils.img_save(normalized_augmentations[vix],'a.png')
+    dutils.img_save(cam_224[vix,None],'as.png')
+    # dutils.img_save(s1,'s1.png')
+    

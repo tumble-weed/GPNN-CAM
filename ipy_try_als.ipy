@@ -1,0 +1,44 @@
+%load_ext autoreload
+%autoreload 2
+import torch
+
+import torch
+
+def ALS(X, y, n_components=10, max_iter=100):
+    # Initialize W and H with random values
+    p, n = X.shape[1], X.shape[2]
+    W = torch.randn(p, n_components)
+    H = torch.randn(n_components, n)
+
+    # Compute X_norm_sq for use in computing loss
+    X_norm_sq = torch.sum(torch.square(X))
+
+    for i in range(max_iter):
+        # Update W using H
+        XH = torch.einsum('jk,ikl->ijl', H, X)
+        HHT = torch.matmul(H, torch.transpose(H, 0, 1))
+        for j in range(p):
+            W[j,:] = torch.solve(torch.einsum('ij,ijk->ik', XH[j,:,:], H), HHT).solution[:,0]
+
+        # Update H using W
+        XW = torch.einsum('ij,ijk->ikl', W, X)
+        WWT = torch.matmul(W, torch.transpose(W, 0, 1))
+        for j in range(n):
+            H[:,j] = torch.solve(torch.einsum('ij,ijk->ik', XW[:,j,:], W), WWT).solution[:,0]
+
+        # Compute loss and check for convergence
+        y_pred = torch.einsum('jk,ikl->il', H, XW)
+        loss = torch.sum(torch.square(y - torch.einsum('ij,ji->i', W, H)))
+        if loss / X_norm_sq < 1e-6:
+            break
+
+    return W, H
+
+
+# Example usage
+X = torch.randn(50, 512, 49)
+y = torch.randn(50)
+W, H = ALS(X, y, n_components=1, max_iter=100,)
+y_pred = torch.einsum('k,ik->i', H, torch.einsum('jp,ijp->ip', W, X))
+mse_loss = torch.mean((y - y_pred) ** 2)
+print('MSE loss:', mse_loss.item())

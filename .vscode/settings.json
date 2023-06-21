@@ -1,0 +1,69 @@
+{
+    "workbench.colorTheme":"Synthwave '2077",
+    "workbench.editor.wrapTabs" : true,
+    "editor.wordWrap": "on",
+    "workbench.action.createTerminalEditorSide": "right",
+    "terminal.integrated.defaultLocation": "editor",
+    "git.ignoreLimitWarning": true,
+    "better-comments.multilineComments": true,
+    "editor.find.seedSearchStringFromSelection": "never",
+    "editor.autoClosingBrackets":"never",
+    "editor.autoClosingQuotes": "never",
+    "better-comments.tags": [
+        // {
+        //   "tag": "!",
+        //   "color": "#FF2D00",
+        //   "strikethrough": false,
+        //   "underline": false,
+        //   "backgroundColor": "transparent",
+        //   "bold": false,
+        //   "italic": false
+        // },
+        // {
+        //   "tag": "?",
+        //   "color": "#3498DB",
+        //   "strikethrough": false,
+        //   "underline": false,
+        //   "backgroundColor": "transparent",
+        //   "bold": false,
+        //   "italic": false
+        // },
+        // {
+        //   "tag": "//",
+        //   "color": "#474747",
+        //   "strikethrough": true,
+        //   "underline": false,
+        //   "backgroundColor": "transparent",
+        //   "bold": false,
+        //   "italic": false
+        // },
+        {
+          "tag": "todo",
+          "color": "#FF8C00",
+          "strikethrough": false,
+          "underline": false,
+          "backgroundColor": "transparent",
+          "bold": false,
+          "italic": false
+        },
+        {
+          "tag": "dbg0",
+          "color": "#DFFF00",
+          "strikethrough": false,
+          "underline": false,
+          "backgroundColor": "#00FFFF",
+          "bold": true,
+          "italic": false
+        },        
+        // {
+        //   "tag": "*",
+        //   "color": "#98C379",
+        //   "strikethrough": false,
+        //   "underline": false,
+        //   "backgroundColor": "transparent",
+        //   "bold": false,
+        //   "italic": false
+        // }
+      ],
+      "editor.find.cursorMoveOnType": false
+}

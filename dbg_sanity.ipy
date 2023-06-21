@@ -1,0 +1,40 @@
+%load_ext autoreload
+%autoreload 2
+
+
+def load_sanity_results(impath=None,modelname='vgg19',sanityname='cascade'):
+  '''
+  impath = impath.rstrip(os.path.sep)
+  impath = os.path.basename(impath)
+  imroot = impath.split('.') # remove extension
+  imroot = imroot[0] 
+  assert imroot == 'samoyed1'
+  # im_save_dir = create_im_save_dir(experiment_name=f'sanity-check-{sanityname}-{modelname}',impath=impath)  
+  print('TODO:im_save_dir is benchmark/results/sanity-check-cascade-vgg19-hummingbird')
+  im_save_dir = os.path.join(settings.RESULTS_DIR,f'sanity-check-{sanityname}-{modelname}',imroot)
+  '''
+  save_root_dir = '/root/bigfiles/other/sanity-checks'
+  import glob
+  def get_im_save_dir(sanityname,modelname,root_dir,impath):
+    impath = impath.rstrip(os.path.sep)
+    impath = os.path.basename(impath)
+    imroot = impath.split('.') # remove extension
+    imroot = imroot[0] 
+    im_save_dir = os.path.join(root_dir,f'sanity-check-{sanityname}-{modelname}',imroot)
+    return im_save_dir
+
+  im_save_dir = get_im_save_dir(sanityname,modelname,save_root_dir,impath)
+  print(im_save_dir)
+  loadnames = glob.glob(os.path.join(im_save_dir,'*.pkl'))
+  print(f'loadnames: {loadnames}')
+#   print(loadnames)
+  for loadname in loadnames:
+    with open(loadname,'rb') as f:
+      loaded = pickle.load(f)
+      print('TODO: see the keys, and visualize the heatmap')
+      import pdb;pdb.set_trace()
+    # assert False
+  # loadname = '/root/evaluate-saliency-4/jigsaw/benchmark/results/sanity-check-cascade-vgg19/samoyed1/1_samoyed258.pkl'
+#   return loaded
+  
+loaded = load_sanity_results(impath=config['impath'],modelname=config['modelname'],sanityname=config['sanityname'])

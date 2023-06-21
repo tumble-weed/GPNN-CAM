@@ -1,0 +1,22 @@
+%load_ext autoreload
+%autoreload 2
+
+# get vgg16 model
+from torchvision import models
+from torch import nn
+vgg16 = models.vgg16(pretrained=True)
+vgg16.eval()
+split_at = [16+1,23+1,30+1] 
+def get_layer(l,model=vgg16):
+    return model.features.__dict__[l]
+def split_network(vgg16,split_at):
+    layers = list(vgg16.features.children())
+    subnetworks = []
+    for i in range(len(split_at)):
+        if i == 0:
+            subnetworks.append(nn.Sequential(*layers[:split_at[i]]))
+        else:
+            subnetworks.append(nn.Sequential(*layers[split_at[i-1]:split_at[i]]))
+    return subnetworks
+
+subnetworks = split_network(vgg16,split_at)

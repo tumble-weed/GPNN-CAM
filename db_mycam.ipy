@@ -1,0 +1,127 @@
+%load_ext autoreload
+%autoreload 2
+"""
+DBG_CORRECT_PASCAL_NORMALIZATION=1 ADD_SCALE_NOISE=0 DBG_NO_INCORRECT=1 CUDA_VISIBLE_DEVICES=0 python -m benchmark.pascal_run_competing_saliency_librecam2  --methodnames gpnn-loadgen-mycam --modelnames vgg16 --skip false --skip_incorrect False --dataset imagenet --run_metric none --purge_metric false
+"""
+if True:
+    # pass
+    PCA_MODES = ['cat','layerwise',False]
+    # pca_mode = 'layerwise'
+    pca_mode = False
+    CHANNEL_MASKS = [False,0]
+    channel_mask = False
+    first_CAM_CLASS = 0
+    till_CAM_CLASS = 2
+    n_CAM_CLASSES = till_CAM_CLASS - first_CAM_CLASS
+    device = normalized_augmentations.device
+    with torch.inference_mode():
+        ignr_feats,ignr_scores = self.CAM_CLASSES[0].cnn_forward_pass_(normalized_augmentations)
+    if ignr_scores.ndim == 4:
+        ignr_scores = ignr_scores.mean(dim=(-1,-2))
+    score = ignr_scores[:,target_id]
+    feat_map_sizes = []
+    for CAM_CLASS in self.CAM_CLASSES[first_CAM_CLASS:till_CAM_CLASS]:
+        assert len(CAM_CLASS.feat_layers) == 1
+        feat_layer = CAM_CLASS.feat_layers[0]
+        feats = feat_layer.feats
+        assert feats.ndim == 4
+        feat_map_sizes.append(feats.shape[-2:])
+    # print(1)
+    all_feats= []
+    for ci,CAM_CLASS in enumerate(self.CAM_CLASSES[first_CAM_CLASS:till_CAM_CLASS]):   
+        feats_i0 =  CAM_CLASS.feat_layers[0].feats
+        feats_i = feats_i0
+        if channel_mask is not False:
+            sigma_channel = feats_i.std(dim=(0,2,3))
+            sigma_channel = sigma_channel/sigma_channel.max()
+            channel_mask = sigma_channel > channel_mask
+            feats_i = feats_i[:,channel_mask,:,:]
+        if pca_mode == 'layerwise':
+            if ci < 2:
+                # npca= 2048
+                npca= 512
+            else:
+                npca= 512
+            
+                
+            pca_obj = PCA(npca)
+            oshape = feats_i.shape
+            feats_i = feats_i.permute(0,2,3,1).reshape(-1,feats_i.shape[1])
+            pca_obj.fit(feats_i)
+            feats_i_tf = pca_obj.transform(feats_i) 
+            if True:
+                feats_i_rec = pca_obj.inverse_transform(feats_i_tf) 
+                error = (feats_i_rec - feats_i).abs().sum()
+                print(error)
+            feats_i = feats_i_tf#*pca_obj.explained_variance_[None,:].sqrt()
+            # convert back to 4 d
+            feats_i = feats_i.view(oshape[0],*oshape[2:],-1).permute(0,3,1,2)
+        # assert False
+        # feats_i = feats_i/feats_i.amax(dim=(0,2,3),keepdim=True)
+        feats_i_up = torch.nn.functional.interpolate(feats_i,feat_map_sizes[-1],mode = 'bilinear')
+        if n_CAM_CLASSES > 1:
+            all_feats.append(feats_i_up)
+        else:
+            # assert False
+            all_feats.append(feats_i)
+    cat_feats = torch.cat(all_feats,dim=1)
+    # assert False
+    # cat_feats =all_feats[0]
+    cat_feats_for_pca = cat_feats.permute(0,2,3,1).reshape(-1,cat_feats.shape[1])
+    # """
+    mu = cat_feats_for_pca.mean(dim=0,keepdim=True)
+    sigma = cat_feats_for_pca.std(dim=0,keepdim=True)
+    cat_feats_for_pca = (cat_feats_for_pca - mu)/sigma
+    # """
+    from model.pca import PCA
+    if pca_mode == 'cat':
+        # npca= 1000  
+        USE_PCA = True
+        npca= 500
+        pca_obj = PCA(npca)
+        pca_obj.fit(cat_feats_for_pca)
+        X_for_regression = pca_obj.transform(cat_feats_for_pca)
+        X_for_regression = X_for_regression.view(normalized_augmentations.shape[0],-1,npca)
+        X_for_regression = X_for_regression.permute(0,2,1)
+    else:
+        USE_PCA = False
+        X_for_regression = cat_feats_for_pca
+        X_for_regression = X_for_regression.view(normalized_augmentations.shape[0],-1,cat_feats_for_pca.shape[-1]).permute(0,2,1)
+        # X_for_regression = X_for_regression - X_for_regression.mean(dim=1,keepdim=True)
+        # X_for_regression = X_for_regression/X_for_regression.std(dim=1,keepdim=True)
+    w,b = solve_shared_regression(X_for_regression,score,lambda_ = 0*0.01)
+    # assert False
+    if False:
+        w = pca_obj.inverse_transform(w)
+        cam = torch.einsum('j,ij->i',w.squeeze(),cat_feats_for_pca ) + b
+        cam = cam.view(normalized_augmentations.shape[0],1,*feat_map_sizes[-1])
+    else:
+        # Z, S, V = torch.pca_lowrank(cat_feats_for_pca.to(device), q=100)
+        cam = torch.einsum('j,ijk->ik',w,X_for_regression) + b
+        # cam0 = torch.einsum('j,ijk->ik',w,X_for_regression) + b
+    if True:
+        # cam =cam.clip(0)
+        cam = cam.view(cam.shape[0],1,*feat_map_sizes[-1])
+        M = cam.amax(dim=-1,keepdim=True).amax(dim=-2,keepdim=True)
+        M = M + (M ==0).float()
+        cam = cam/M
+    else:
+        cam = cam.view(cam.shape[0],1,*feat_map_sizes[-1])
+    cam_up = torch.nn.functional.interpolate(cam,normalized_augmentations.shape[-2:],mode = 'bilinear')
+
+    vix = 5
+    dutils.img_save(normalized_augmentations[vix],'a.png')
+    dutils.img_save(cam_up[vix],'s.png')    
+if False:
+    vix = 5
+    dutils.img_save(normalized_augmentations[vix],'a.png')
+    dutils.img_save(cam_224[vix],'s.png')        
+if False:
+    vix = 0
+    # dutils.img_save(augmentations[vix],'a.png')
+    dutils.img_save(ref,'ref.png')
+    dutils.img_save(out['gpnn-mycam']['avg_saliency'][vix],'s.png')
+if False:
+    # dutils.img_save(running_saliency_dicts[0]['gpnn_mycam']['avg_saliency'],'s.png')
+    dutils.img_save(saliency_dicts[0]['gpnn-mycam']['avg_saliency'],'s.png')
+    dutils.img_save(ref,'ref.png')

@@ -1,0 +1,14 @@
+__pycache__/
+ILSVRC2012_bbox_val_v3.tgz
+cameras-sessions
+cameras-tmux-logs
+collected_gpnn_D_0.bl2
+collected_gpnn_I_0.bl2
+*.log
+*-sessions
+*-tmux-logs
+*-aliases
+
+rclone-*
+rclone-*
+

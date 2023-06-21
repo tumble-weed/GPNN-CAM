@@ -1,0 +1,7 @@
+%load_ext autoreload
+%autoreload 2
+import dutils
+dutils.img_save(obj_mask,'obj_mask.png')
+dutils.img_save(nbd_mask,'nbd_mask.png')
+dutils.img_save(saliency,'saliency.png')
+# dutils.img_save(grayscale_cams,'saliency.png')

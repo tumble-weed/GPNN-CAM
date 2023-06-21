@@ -1,0 +1,141 @@
+%load_ext autoreload
+%autoreload 2
+if True:
+    # pass
+    first_CAM_CLASS = 0
+    till_CAM_CLASS = 3
+    n_CAM_CLASSES = till_CAM_CLASS - first_CAM_CLASS
+    device = normalized_augmentations.device
+    with torch.inference_mode():
+        ignr_feats,ignr_scores = self.CAM_CLASSES[0].cnn_forward_pass_(normalized_augmentations)
+    if ignr_scores.ndim == 4:
+        ignr_scores = ignr_scores.mean(dim=(-1,-2))
+    score = ignr_scores[:,target_id]
+    feat_map_sizes = []
+    for CAM_CLASS in self.CAM_CLASSES[first_CAM_CLASS:till_CAM_CLASS]:
+        assert len(CAM_CLASS.feat_layers) == 1
+        feat_layer = CAM_CLASS.feat_layers[0]
+        feats = feat_layer.feats
+        assert feats.ndim == 4
+        feat_map_sizes.append(feats.shape[-2:])
+    """
+    initial importances
+    """
+    all_feats= []
+    all_w = []
+    layer_channels = []
+    for ci,CAM_CLASS in enumerate(self.CAM_CLASSES):   
+        feats_i0=  CAM_CLASS.feat_layers[0].feats
+        # feats_i = feats_i0.permute(0,2,3,1).reshape(feats_i.shape[0],feats_i.shape[1],-1)
+        # assert False
+        feats_i = feats_i0.reshape(feats_i0.shape[0],feats_i0.shape[1],-1)
+        
+        mu = feats_i.mean(dim=(0,-1),keepdim=False)
+        sigma = feats_i.std(dim=(0,-1),keepdim=False)
+        feats_i = (feats_i - mu[None,:,None])/sigma[None,:,None]            
+        
+        X_for_regression = feats_i
+        w,b = solve_shared_regression(X_for_regression,score,lambda_ = 0.01)
+        
+        all_w.append(w)
+        layer_channels.append(w.shape[0])
+        if False:
+            w_abs = w.abs()
+            rel_w_abs = w_abs/w_abs.max()
+            w_mask = rel_w_abs > 0.1
+            feats_i_masked = feats_i0[:,w_mask,:,:]
+            all_feats.append(feats_i_masked)
+        else:
+            # all_feats.append(feats_i)
+            pass
+    # all_feats = torch.cat(all_feats,dim=1)
+    all_w = torch.cat(all_w,dim=0)
+    all_w_abs = all_w.abs()
+    rel_all_w_abs = all_w_abs/all_w_abs.max()
+    w_mask = rel_all_w_abs > 0.5
+    layerwise_w_mask = []
+    istart = 0
+    for ci,CAM_CLASS in enumerate(self.CAM_CLASSES):   
+        layerwise_w_mask.append(w_mask[istart:istart+layer_channels[ci]])
+        istart += layer_channels[ci]
+    all_feats= []
+    for ci,CAM_CLASS in enumerate(self.CAM_CLASSES):   
+        feats_i0=  CAM_CLASS.feat_layers[0].feats
+        feats_i0 = feats_i0[:,layerwise_w_mask[ci]]
+        feats_i0 = torch.nn.functional.interpolate(feats_i0,feat_map_sizes[-1],mode = 'bilinear')
+        feats_i = feats_i0
+        if False:
+            feats_i = feats_i0.reshape(feats_i0.shape[0],feats_i0.shape[1],-1)
+            
+            mu = feats_i.mean(dim=(0,-1),keepdim=False)
+            sigma = feats_i.std(dim=(0,-1),keepdim=False)
+            feats_i = (feats_i - mu[None,:,None])/sigma[None,:,None]          
+            
+        all_feats.append(feats_i)
+
+    # all_feats = torch.cat(all_feats,dim=1)
+    # assert False
+    """
+    all_feats= []
+    for ci,CAM_CLASS in enumerate(self.CAM_CLASSES[first_CAM_CLASS:till_CAM_CLASS]):   
+        feats_i =  CAM_CLASS.feat_layers[0].feats
+        if True and 'CHANNEL_MASK':
+            sigma_channel = feats_i.std(dim=(0,2,3))
+            sigma_channel = sigma_channel/sigma_channel.max()
+            channel_mask = sigma_channel > 0.
+            feats_i = feats_i[:,channel_mask,:,:]
+        feats_i_up = torch.nn.functional.interpolate(feats_i,feat_map_sizes[-1],mode = 'bilinear')
+        if n_CAM_CLASSES > 1:
+            all_feats.append(feats_i_up)
+        else:
+            all_feats.append(feats_i)
+    """
+    """
+    all_feats0 = all_feats
+    all_feats = []
+    for f in all_feats0:
+        fup = torch.nn.functional.interpolate(f,feat_map_sizes[-1],mode = 'bilinear')
+        all_feats.append(fup)
+    
+    """
+    cat_feats = torch.cat(all_feats,dim=1)
+    # cat_feats =all_feats[0]
+    cat_feats_for_pca = cat_feats.permute(0,2,3,1).reshape(-1,cat_feats.shape[1])
+    mu = cat_feats_for_pca.mean(dim=0,keepdim=True)
+    sigma = cat_feats_for_pca.std(dim=0,keepdim=True)
+    cat_feats_for_pca = (cat_feats_for_pca - mu)/sigma
+    from model.pca import PCA
+
+
+    X_for_regression = cat_feats_for_pca
+    X_for_regression = X_for_regression.view(normalized_augmentations.shape[0],-1,cat_feats_for_pca.shape[-1]).permute(0,2,1)
+    w,b = solve_shared_regression(X_for_regression,score,lambda_ = 0.01)
+
+    # Z, S, V = torch.pca_lowrank(cat_feats_for_pca.to(device), q=100)
+    cam = torch.einsum('j,ijk->ik',w,X_for_regression) + b
+    if True:
+        cam =cam.clip(0)
+        cam = cam.view(cam.shape[0],1,*feat_map_sizes[-1])
+        M = cam.amax(dim=-1,keepdim=True).amax(dim=-2,keepdim=True)
+        M = M + (M ==0).float()
+        cam = cam/M
+    else:
+        cam = cam.view(cam.shape[0],1,*feat_map_sizes[-1])
+    cam_up = torch.nn.functional.interpolate(cam,normalized_augmentations.shape[-2:],mode = 'bilinear')
+
+    vix = 7
+    dutils.img_save(normalized_augmentations[vix],'a.png')
+    dutils.img_save(cam_up[vix],'s.png')    
+if False:
+    vix = 5
+    dutils.img_save(normalized_augmentations[vix],'a.png')
+    dutils.img_save(cam_224[vix],'s.png')        
+if False:
+    vix = 0
+    # dutils.img_save(augmentations[vix],'a.png')
+    dutils.img_save(ref,'ref.png')
+    dutils.img_save(out['gpnn-mycam']['avg_saliency'][vix],'s.png')
+if False:
+    # dutils.img_save(running_saliency_dicts[0]['gpnn_mycam']['avg_saliency'],'s.png')
+    dutils.img_save(saliency_dicts[0]['gpnn-mycam']['avg_saliency'],'s.png')
+    dutils.img_save(ref,'ref.png')

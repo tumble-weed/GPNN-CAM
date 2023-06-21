@@ -1,0 +1,8 @@
+%load_ext autoreload
+%autoreload 2
+import dutils
+vix=1
+dutils.img_save(aug[vix,:,:224,96:96+224],'a.png')
+dutils.img_save(probs[vix,5],'probs5.png')
+dutils.img_save(probs[vix,6],'probs6.png')
+dutils.img_save(probs[vix,14],'probs14.png')
